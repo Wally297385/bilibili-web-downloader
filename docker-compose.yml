@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  bili-web:
+    build: .
+    image: bili-web:latest
+    container_name: bili-web
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    volumes:
+      # 持久化設定與運行資料 (包含歷史紀錄、Cookie、任務日誌)
+      - ./data:/app/data
+      # 音訊儲存目錄 (可映射至本機硬碟、NAS 或 WebDAV/Audiobookshelf 媒體庫)
+      - ./storage:/app/storage
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8087
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+      - STORAGE_BASE_DIR=/app/storage
+      - LOGS_DIR=/app/data/logs
+      - HISTORY_FILE=/app/data/history.json
+      - COOKIE_FILE=/app/data/cookie.txt
+      - SECRET_KEY=bili-downloader-secret-key-change-me

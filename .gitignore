@@ -1,0 +1,23 @@
+# 環境變數與機密資訊
+.env
+*.env.local
+
+# 資料與儲存目錄
+data/
+storage/
+logs/
+*.log
+
+# Python 快取與虛擬環境
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# 系統與編輯器快取
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

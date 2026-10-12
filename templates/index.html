@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bilibili 遠端排隊音訊下載器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bili: {
+                            50: '#fdf2f4',
+                            100: '#fce7eb',
+                            200: '#f9d0d9',
+                            300: '#f5a9bb',
+                            400: '#ef7896',
+                            500: '#fb7299', // Official Bilibili Pink
+                            600: '#e03a68',
+                            700: '#bc2650'
+                        },
+                        brand: { 500: '#38bdf8', 600: '#0284c7', 700: '#0369a1' }
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-bili-500 selection:text-white">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-bili-600 to-pink-400 flex items-center justify-center shadow-lg shadow-bili-500/20">
+                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M18.665 21.879H5.335A3.339 3.339 0 0 1 2 18.544V8.79a3.339 3.339 0 0 1 3.335-3.335h.447l-1.92-1.92a1 1 0 1 1 1.414-1.414l2.977 2.977a.998.998 0 0 1 .293.707h7.899a.998.998 0 0 1 .293-.707l2.977-2.977a1 1 0 1 1 1.414 1.414l-1.92 1.92h.455A3.339 3.339 0 0 1 22 8.79v9.754a3.339 3.339 0 0 1-3.335 3.335zM8.5 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm7 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight tracking-wide flex items-center gap-2">
+                        Bilibili 遠端排隊下載器
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-bili-500/10 text-bili-400 border border-bili-500/20 font-mono">v1.0 Pro</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">專屬 4 重完整性驗證 • 無損 DASH 串流 • 自動生成 Log 與 WebDAV 直通</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 sm:gap-3">
+                <!-- Cookie Config Button -->
+                <button onclick="toggleCookieModal()" class="text-xs text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 shadow-sm">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    <span>帳號 Cookie</span>
+                    <span id="cookie-status-badge" class="px-1.5 py-0.2 text-[10px] rounded bg-slate-700 text-slate-300">檢查中</span>
+                </button>
+
+                <div class="h-4 w-px bg-slate-800"></div>
+
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="auth-user" class="text-xs font-mono text-slate-400">admin</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Top Grid: Input & Options (Left) + Current Running Task Status (Right) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Input & Config Card (7 Cols) -->
+            <div class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-bili-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                            <h2 class="font-bold text-slate-100 text-sm">新增下載任務</h2>
+                        </div>
+                        <span class="text-xs text-slate-400">支援每行一個網址 / BV 號</span>
+                    </div>
+
+                    <!-- URL Input Textarea -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Bilibili 影片 / 合輯網址清單</label>
+                        <textarea id="task-urls" rows="4" placeholder="請輸入 B 站網址，例如：&#10;https://www.bilibili.com/video/BV1d77r6XE7s/&#10;BV1xxxxxxxxxx" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-bili-500 focus:ring-1 focus:ring-bili-500 font-mono resize-none transition shadow-inner placeholder:text-slate-600"></textarea>
+                    </div>
+
+                    <!-- Options Grid -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <!-- Quality Selector -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">下載品質 / 格式</label>
+                            <select id="task-quality" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-bili-500 font-sans">
+                                <option value="64k" selected>🎧 純音訊 64kbps M4A (聽書推薦/體積小)</option>
+                                <option value="best">🎵 純音訊 最高音質 M4A/FLAC (高保真)</option>
+                            </select>
+                        </div>
+
+                        <!-- Subfolder Option -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">自定義子資料夾 (選填)</label>
+                            <input id="task-subfolder" type="text" placeholder="預設自動抓取合輯 Title" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-bili-500">
+                        </div>
+                    </div>
+
+                    <!-- Advanced Collapse -->
+                    <div class="border border-slate-800/80 rounded-xl p-3 bg-slate-950/40 text-xs">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="flex items-center gap-1.5 font-medium">
+                                <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                安全防護機制：4 重完整性驗證 + 5~15s 隨機間隔緩衝（已啟用）
+                            </span>
+                            <span class="text-[11px] text-emerald-400 font-mono">ACTIVE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex items-center justify-between pt-4 border-t border-slate-800 mt-3">
+                    <button onclick="document.getElementById('task-urls').value=''" class="text-xs text-slate-400 hover:text-slate-200 transition">清空輸入</button>
+                    <button onclick="submitBatchTasks()" class="bg-gradient-to-r from-bili-600 to-pink-500 hover:from-bili-500 hover:to-pink-400 text-white font-semibold text-xs px-6 py-2.5 rounded-xl shadow-lg shadow-bili-500/20 transition flex items-center gap-2 active:scale-95">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        <span>加入下載排隊</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Current Active Task Status Card (5 Cols) -->
+            <div class="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <h2 class="font-bold text-slate-100 text-sm">目前執行中任務</h2>
+                        </div>
+                        <span id="active-task-status" class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">閒置中 (Idle)</span>
+                    </div>
+
+                    <div id="active-task-box" class="space-y-4">
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">任務標題</div>
+                            <div id="active-task-title" class="text-sm font-semibold text-slate-100 truncate">無進行中任務</div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-xs mb-1.5">
+                                <span id="active-task-msg" class="text-slate-400 truncate max-w-[200px]">等待任務...</span>
+                                <span id="active-task-progress-txt" class="font-mono text-bili-400 font-bold">0 / 0 集 (0%)</span>
+                            </div>
+                            <div class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5">
+                                <div id="active-task-bar" class="bg-gradient-to-r from-bili-500 to-pink-400 h-full rounded-full transition-all duration-300 ease-out shadow-sm" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 text-xs bg-slate-950/60 p-3 rounded-xl border border-slate-800 font-mono">
+                            <div>
+                                <span class="text-slate-500 block text-[10px]">TASK ID</span>
+                                <span id="active-task-id" class="text-slate-300">-</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 block text-[10px]">FORMAT</span>
+                                <span id="active-task-fmt" class="text-slate-300">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 pt-4 border-t border-slate-800 mt-4">
+                    <button onclick="stopAllTasks()" class="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold py-2 rounded-xl transition flex items-center justify-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        <span>停止所有排隊與執行</span>
+                    </button>
+                    <button onclick="clearCompletedQueue()" class="text-xs text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition whitespace-nowrap border border-slate-700">
+                        清除完成
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Live Terminal Log Viewer -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="flex gap-1.5">
+                        <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+                        <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+                        <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+                    </div>
+                    <span class="text-xs font-mono text-slate-400 font-semibold ml-2">即時終端日誌 (Live Logs)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="clearTerminalLogs()" class="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">清空視窗</button>
+                </div>
+            </div>
+            <div id="terminal-logs" class="p-4 bg-slate-950 font-mono text-xs text-slate-300 h-64 overflow-y-auto space-y-1 select-text">
+                <div class="text-slate-500 italic">[系統就緒] 正在連接遠端下載引擎 WebSocket...</div>
+            </div>
+        </div>
+
+        <!-- Bottom Grid: Queue (Left) + History / Logs (Right) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Task Queue List (5 Cols) -->
+            <div class="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        <h2 class="font-bold text-slate-100 text-sm">排隊中隊列</h2>
+                    </div>
+                    <span id="queue-count-badge" class="text-xs font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">0 個任務</span>
+                </div>
+                <div id="queue-list" class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                    <div class="text-xs text-slate-500 text-center py-8">目前無排隊中的任務</div>
+                </div>
+            </div>
+
+            <!-- History & Generated Logs (7 Cols) -->
+            <div class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <h2 class="font-bold text-slate-100 text-sm">歷史下載紀錄與 Log</h2>
+                    </div>
+                    <button onclick="clearHistory()" class="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">清空紀錄</button>
+                </div>
+                <div id="history-list" class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                    <div class="text-xs text-slate-500 text-center py-8">無歷史紀錄</div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Cookie Modal -->
+    <div id="cookie-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 mx-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    <h3 class="font-bold text-slate-100 text-sm">Bilibili 帳號 Cookie / SESSDATA 設定</h3>
+                </div>
+                <button onclick="toggleCookieModal()" class="text-slate-400 hover:text-slate-200">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+                若需下載 <strong>大會員專屬高音質 (Hi-Res / 杜比全景聲)</strong> 或受限內容，請貼入 B 站 Cookie 字串或 <code class="text-amber-300 font-mono">SESSDATA=xxxxxx; buvid3=xxxx;</code>。一般公開音訊留空亦可正常下載。
+            </p>
+            <textarea id="cookie-input" rows="4" placeholder="SESSDATA=xxxx; bili_jct=xxxx; buvid3=xxxx;" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-400 resize-none"></textarea>
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="toggleCookieModal()" class="px-4 py-2 text-xs text-slate-400 hover:text-slate-200 bg-slate-800 rounded-xl">取消</button>
+                <button onclick="saveCookie()" class="px-5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl shadow-lg shadow-amber-500/20">儲存設定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Viewer Modal -->
+    <div id="log-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 mx-4 flex flex-col max-h-[85vh]">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <h3 id="log-modal-title" class="font-bold text-slate-100 text-sm">任務執行 Log 檔案</h3>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a id="log-modal-download-btn" href="#" target="_blank" class="text-xs bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 px-3 py-1 rounded-lg transition">下載 Log</a>
+                    <button onclick="toggleLogModal()" class="text-slate-400 hover:text-slate-200">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <pre id="log-modal-content" class="flex-1 bg-slate-950 p-4 rounded-xl font-mono text-xs text-slate-300 overflow-y-auto select-text whitespace-pre-wrap border border-slate-800"></pre>
+        </div>
+    </div>
+
+    <!-- Frontend Script -->
+    <script>
+        let ws = null;
+        let activeTaskId = null;
+
+        function initWebSocket() {
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${proto}//${window.location.host}/bili/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                appendLog("[系統] WebSocket 已成功連線，即時同步中。");
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                handleWsMessage(msg);
+            };
+
+            ws.onclose = () => {
+                appendLog("[系統] 連線已斷開，5秒後嘗試自動重連...");
+                setTimeout(initWebSocket, 5000);
+            };
+        }
+
+        function handleWsMessage(msg) {
+            switch(msg.type) {
+                case 'log_line':
+                    appendLog(msg.data.line);
+                    break;
+                case 'task_started':
+                case 'task_progress':
+                    updateActiveTaskUI(msg.data.task);
+                    break;
+                case 'task_completed':
+                    updateActiveTaskUI(msg.data.task);
+                    break;
+                case 'queue_updated':
+                    renderQueue(msg.data.tasks);
+                    break;
+                case 'history_updated':
+                    renderHistory(msg.data.history);
+                    break;
+            }
+        }
+
+        function appendLog(line) {
+            const term = document.getElementById('terminal-logs');
+            const div = document.createElement('div');
+            
+            if (line.includes('SUCCESS') || line.includes('成功')) {
+                div.className = 'text-emerald-400 font-medium';
+            } else if (line.includes('FAILED') || line.includes('錯誤') || line.includes('❌')) {
+                div.className = 'text-rose-400 font-medium';
+            } else if (line.includes('Attempt') || line.includes('重試')) {
+                div.className = 'text-amber-300';
+            } else if (line.includes('===')) {
+                div.className = 'text-sky-400 font-bold py-0.5';
+            } else {
+                div.className = 'text-slate-300';
+            }
+            
+            div.textContent = line;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function clearTerminalLogs() {
+            document.getElementById('terminal-logs').innerHTML = '<div class="text-slate-500 italic">[視窗已清空]</div>';
+        }
+
+        function updateActiveTaskUI(task) {
+            if (!task || task.status === 'queued') {
+                document.getElementById('active-task-status').textContent = '閒置中 (Idle)';
+                document.getElementById('active-task-status').className = 'text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700';
+                document.getElementById('active-task-title').textContent = '無進行中任務';
+                document.getElementById('active-task-msg').textContent = '等待任務...';
+                document.getElementById('active-task-progress-txt').textContent = '0 / 0 集 (0%)';
+                document.getElementById('active-task-bar').style.width = '0%';
+                document.getElementById('active-task-id').textContent = '-';
+                document.getElementById('active-task-fmt').textContent = '-';
+                return;
+            }
+
+            activeTaskId = task.id;
+            const statusBadge = document.getElementById('active-task-status');
+            
+            if (task.status === 'running') {
+                statusBadge.textContent = '下載執行中';
+                statusBadge.className = 'text-xs font-mono font-semibold px-2 py-0.5 rounded bg-bili-500/10 text-bili-400 border border-bili-500/30 animate-pulse';
+            } else if (task.status === 'completed') {
+                statusBadge.textContent = '已完成';
+                statusBadge.className = 'text-xs font-mono font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+            } else if (task.status === 'failed') {
+                statusBadge.textContent = '執行失敗';
+                statusBadge.className = 'text-xs font-mono font-semibold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30';
+            }
+
+            document.getElementById('active-task-title').textContent = task.title || task.url;
+            document.getElementById('active-task-msg').textContent = task.current_msg;
+            document.getElementById('active-task-progress-txt').textContent = `${task.current} / ${task.total} 集 (${task.percent}%)`;
+            document.getElementById('active-task-bar').style.width = `${task.percent}%`;
+            document.getElementById('active-task-id').textContent = task.id;
+            document.getElementById('active-task-fmt').textContent = task.quality.toUpperCase();
+        }
+
+        function renderQueue(tasks) {
+            const qList = document.getElementById('queue-list');
+            const queued = tasks.filter(t => t.status === 'queued');
+            document.getElementById('queue-count-badge').textContent = `${queued.length} 個任務`;
+
+            if (queued.length === 0) {
+                qList.innerHTML = '<div class="text-xs text-slate-500 text-center py-8">目前無排隊中的任務</div>';
+                return;
+            }
+
+            qList.innerHTML = queued.map((t, idx) => `
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2.5 overflow-hidden">
+                        <span class="w-5 h-5 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-mono font-bold text-[10px] flex-shrink-0">${idx + 1}</span>
+                        <div class="truncate">
+                            <div class="font-semibold text-slate-200 truncate font-mono">${t.url}</div>
+                            <div class="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                <span>格式: ${t.quality}</span>
+                                <span>•</span>
+                                <span>${t.created_at}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[10px] whitespace-nowrap">排隊中</span>
+                </div>
+            `).join('');
+        }
+
+        function renderHistory(history) {
+            const hList = document.getElementById('history-list');
+            if (!history || history.length === 0) {
+                hList.innerHTML = '<div class="text-xs text-slate-500 text-center py-8">無歷史紀錄</div>';
+                return;
+            }
+
+            hList.innerHTML = history.map(t => `
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
+                    <div class="overflow-hidden space-y-1">
+                        <div class="font-semibold text-slate-100 truncate">${t.title || t.url}</div>
+                        <div class="text-[11px] text-slate-400 flex items-center gap-2">
+                            <span class="${t.status === 'completed' ? 'text-emerald-400' : 'text-rose-400'} font-medium">
+                                ${t.status === 'completed' ? '✔ 下載完成' : (t.status === 'cancelled' ? '✖ 已取消' : '✖ 失敗')}
+                            </span>
+                            <span>•</span>
+                            <span>${t.current}/${t.total} 集</span>
+                            <span>•</span>
+                            <span class="font-mono text-slate-500">${t.completed_at || t.created_at}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                        ${t.webdav_path ? `
+                            <a href="${t.webdav_path}" target="_blank" class="px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition text-[11px]">
+                                開啟資料夾
+                            </a>
+                        ` : ''}
+                        <button onclick="viewLog('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 transition text-[11px]">
+                            查看 Log
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function submitBatchTasks() {
+            const urlsText = document.getElementById('task-urls').value.trim();
+            if (!urlsText) {
+                alert('請先輸入至少一個 Bilibili 網址！');
+                return;
+            }
+
+            const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            const quality = document.getElementById('task-quality').value;
+            const subfolder = document.getElementById('task-subfolder').value.trim();
+
+            try {
+                const resp = await fetch('/bili/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        urls: urls,
+                        quality: quality,
+                        min_delay: 5.0,
+                        max_delay: 15.0,
+                        custom_subfolder: subfolder
+                    })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    document.getElementById('task-urls').value = '';
+                    appendLog(`[系統] 成功加入 ${data.count} 個任務至排隊隊列。`);
+                } else {
+                    alert('新增失敗: ' + (data.detail || '未知錯誤'));
+                }
+            } catch (err) {
+                alert('網路請求失敗: ' + err);
+            }
+        }
+
+        async function stopAllTasks() {
+            if (!confirm('確定要停止當前執行中的任務，並取消所有排隊隊列嗎？')) return;
+            try {
+                await fetch('/bili/api/tasks/stop', { method: 'POST' });
+            } catch(e) {
+                alert('停止失敗: ' + e);
+            }
+        }
+
+        async function clearCompletedQueue() {
+            try {
+                await fetch('/bili/api/tasks/clear_completed', { method: 'POST' });
+            } catch(e) {
+                alert('清除失敗: ' + e);
+            }
+        }
+
+        async function clearHistory() {
+            if (!confirm('確定要清空歷史紀錄嗎？（不會刪除硬碟已下載的檔案）')) return;
+            try {
+                await fetch('/bili/api/history/clear', { method: 'POST' });
+            } catch(e) {
+                alert('清空失敗: ' + e);
+            }
+        }
+
+        function toggleCookieModal() {
+            const m = document.getElementById('cookie-modal');
+            m.classList.toggle('hidden');
+        }
+
+        async function checkCookie() {
+            try {
+                const resp = await fetch('/bili/api/cookie');
+                const data = await resp.json();
+                const badge = document.getElementById('cookie-status-badge');
+                if (data.is_set) {
+                    badge.textContent = '已設定';
+                    badge.className = 'px-1.5 py-0.2 text-[10px] rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                } else {
+                    badge.textContent = '未設定(公開)';
+                    badge.className = 'px-1.5 py-0.2 text-[10px] rounded bg-slate-700 text-slate-300';
+                }
+            } catch(e) {}
+        }
+
+        async function saveCookie() {
+            const cookie = document.getElementById('cookie-input').value.trim();
+            try {
+                const resp = await fetch('/bili/api/cookie', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie: cookie })
+                });
+                if (resp.ok) {
+                    toggleCookieModal();
+                    checkCookie();
+                    alert('Cookie 設定已儲存！');
+                }
+            } catch(e) {
+                alert('儲存失敗: ' + e);
+            }
+        }
+
+        async function viewLog(taskId) {
+            try {
+                const resp = await fetch(`/bili/api/logs/${taskId}`);
+                if (!resp.ok) {
+                    alert('無法讀取 Log 檔案（可能已被清理或尚未生成）');
+                    return;
+                }
+                const text = await resp.text();
+                document.getElementById('log-modal-content').textContent = text;
+                document.getElementById('log-modal-title').textContent = `任務 Log: ${taskId}`;
+                document.getElementById('log-modal-download-btn').href = `/bili/api/logs/${taskId}`;
+                document.getElementById('log-modal').classList.remove('hidden');
+            } catch(e) {
+                alert('讀取失敗: ' + e);
+            }
+        }
+
+        function toggleLogModal() {
+            document.getElementById('log-modal').classList.toggle('hidden');
+        }
+
+        // Initial setup
+        window.onload = () => {
+            initWebSocket();
+            checkCookie();
+        };
+    </script>
+</body>
+</html>

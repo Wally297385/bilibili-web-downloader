@@ -1,0 +1,14 @@
+[Unit]
+Description=Bilibili Downloader Web GUI Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/bili-web
+ExecStart=/srv/bili-web/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8087
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
