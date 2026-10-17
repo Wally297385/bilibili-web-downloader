@@ -11,7 +11,8 @@ from typing import List, Dict, Optional, Any, Set
 from pydantic import BaseModel, Field
 
 from config import settings
-from bili_engine import BiliDownloadEngine
+from bili_engine import BiliDownloadEngine, is_bilibili_input
+from ytdlp_engine import YtDlpEngine
 
 class TaskItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -47,6 +48,10 @@ class TaskManager:
         self.engine = BiliDownloadEngine(
             storage_base_dir=settings.STORAGE_BASE_DIR,
             cookie_file=settings.COOKIE_FILE
+        )
+        self.ytdlp_engine = YtDlpEngine(
+            storage_base_dir=settings.STORAGE_BASE_DIR,
+            verify=self.engine.verify_audio_file
         )
         self.load_history()
 
@@ -227,8 +232,9 @@ class TaskManager:
 
             # Execute download in worker thread
             try:
+                engine = self.engine if is_bilibili_input(task.url) else self.ytdlp_engine
                 res = await asyncio.to_thread(
-                    self.engine.execute_task,
+                    engine.execute_task,
                     task_id=task.id,
                     target_url=task.url,
                     quality=task.quality,

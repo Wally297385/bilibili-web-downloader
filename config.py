@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     PORT: int = 8087
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
+    # false = no login (only for LAN/VPN-only deployments)
+    AUTH_ENABLED: bool = True
     STORAGE_BASE_DIR: str = "./storage"
     LOGS_DIR: str = "./data/logs"
     HISTORY_FILE: str = "./data/history.json"

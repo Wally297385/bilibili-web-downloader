@@ -13,9 +13,17 @@ from config import settings
 from task_manager import manager
 
 app = FastAPI(title="Bilibili Remote Downloader Web GUI")
-security = HTTPBasic()
+security = HTTPBasic(auto_error=False)
 
-def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
+def authenticate(credentials: Optional[HTTPBasicCredentials] = Depends(security)):
+    if not settings.AUTH_ENABLED:
+        return "local"
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Basic"},
+        )
     correct_username = secrets.compare_digest(credentials.username, settings.ADMIN_USERNAME)
     correct_password = secrets.compare_digest(credentials.password, settings.ADMIN_PASSWORD)
     if not (correct_username and correct_password):

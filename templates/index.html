@@ -91,13 +91,13 @@
                             <svg class="w-5 h-5 text-bili-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
                             <h2 class="font-bold text-slate-100 text-sm">新增下載任務</h2>
                         </div>
-                        <span class="text-xs text-slate-400">支援每行一個網址 / BV 號</span>
+                        <span class="text-xs text-slate-400">每行一個：B 站網址 / BV 號 / b23.tv 短網址 / YouTube 影片或播放清單</span>
                     </div>
 
                     <!-- URL Input Textarea -->
                     <div>
                         <label class="block text-xs font-medium text-slate-400 mb-1.5">Bilibili 影片 / 合輯網址清單</label>
-                        <textarea id="task-urls" rows="4" placeholder="請輸入 B 站網址，例如：&#10;https://www.bilibili.com/video/BV1d77r6XE7s/&#10;BV1xxxxxxxxxx" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-bili-500 focus:ring-1 focus:ring-bili-500 font-mono resize-none transition shadow-inner placeholder:text-slate-600"></textarea>
+                        <textarea id="task-urls" rows="4" placeholder="每行一個，例如：&#10;https://www.bilibili.com/video/BV1d77r6XE7s/&#10;https://b23.tv/OeT0XOq&#10;https://www.youtube.com/playlist?list=..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-bili-500 focus:ring-1 focus:ring-bili-500 font-mono resize-none transition shadow-inner placeholder:text-slate-600"></textarea>
                     </div>
 
                     <!-- Options Grid -->
@@ -107,7 +107,7 @@
                             <label class="block text-xs font-medium text-slate-400 mb-1">下載品質 / 格式</label>
                             <select id="task-quality" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-bili-500 font-sans">
                                 <option value="64k" selected>🎧 純音訊 64kbps M4A (聽書推薦/體積小)</option>
-                                <option value="best">🎵 純音訊 最高音質 M4A/FLAC (高保真)</option>
+                                <option value="best">🎵 最高音質 (B站大會員可得 FLAC；YouTube 保留原始 Opus/M4A)</option>
                             </select>
                         </div>
 
