@@ -268,6 +268,11 @@ class BiliDownloadEngine:
                 with urllib.request.urlopen(r, timeout=60) as resp:
                     if got and resp.status != 206:
                         raise RuntimeError(f"伺服器不支援續傳 (HTTP {resp.status})")
+                    if got:
+                        cr = resp.headers.get('Content-Range', '')
+                        m = re.match(r'bytes (\d+)-', cr)
+                        if not m or int(m.group(1)) != got:
+                            raise RuntimeError(f"續傳位置不符 (要求 {got}，伺服器回 {cr or '無 Content-Range'})")
                     if total is None:
                         cr = resp.headers.get('Content-Range')
                         cl = resp.headers.get('Content-Length')
@@ -394,28 +399,22 @@ class BiliDownloadEngine:
             progress_callback(valid_count, total_pages, percent, f"已就緒 {valid_count}/{total_pages}")
 
         success_count = valid_count
-        failed_episodes = []
 
-        for idx, page_info in enumerate(needed_pages):
-            if check_cancelled and check_cancelled():
-                emit_log("任務已被使用者手動取消。")
-                break
+        def cancelled() -> bool:
+            return bool(check_cancelled and check_cancelled())
 
+        def download_episode(page_info: Dict[str, Any], max_attempts: int) -> bool:
             p_num = page_info['page']
+            tag = f"[{p_num:02d}/{total_pages}]"
             cid = page_info['cid']
             expected_dur = float(page_info.get('duration', 0))
             base = page_base(page_info)
             temp_filepath = base + ".part"
-
-            emit_log(f"[{p_num:02d}/{total_pages}] 開始處理: {os.path.basename(base)} (時長: {expected_dur/60:.1f} 分鐘)...")
-
-            max_attempts = 5
-            download_ok = False
+            emit_log(f"{tag} 開始處理: {os.path.basename(base)} (時長: {expected_dur/60:.1f} 分鐘)...")
 
             for attempt in range(1, max_attempts + 1):
-                if check_cancelled and check_cancelled():
-                    break
-
+                if cancelled():
+                    return False
                 filepath = None
                 try:
                     urls, ext = self.get_audio_stream(bvid, cid, quality)
@@ -426,12 +425,10 @@ class BiliDownloadEngine:
                         'User-Agent': self.get_headers(bvid)['User-Agent'],
                         'Referer': 'https://www.bilibili.com/'
                     })
-
                     downloaded_bytes, expected_bytes = self._fetch_with_resume(
-                        dl_req, temp_filepath, check_cancelled, emit_log, f"[{p_num:02d}/{total_pages}]")
-
-                    if check_cancelled and check_cancelled():
-                        break
+                        dl_req, temp_filepath, check_cancelled, emit_log, tag)
+                    if cancelled():
+                        return False
 
                     # Check 1: Content-Length exact match
                     if expected_bytes and downloaded_bytes != expected_bytes:
@@ -446,35 +443,70 @@ class BiliDownloadEngine:
                     if not is_valid:
                         raise RuntimeError(f"完整性檢驗未通過: {reason}")
                     if reason != "Valid":
-                        emit_log(f"[{p_num:02d}/{total_pages}] 注意: {reason}")
+                        emit_log(f"{tag} 注意: {reason}")
 
                     size_mb = os.path.getsize(filepath) / (1024 * 1024)
-                    emit_log(f"[{p_num:02d}/{total_pages}] 下載並驗證成功 -> {os.path.basename(filepath)} ({size_mb:.2f} MB)")
-                    download_ok = True
-                    success_count += 1
-                    break
+                    emit_log(f"{tag} 下載並驗證成功 -> {os.path.basename(filepath)} ({size_mb:.2f} MB)")
+                    return True
 
                 except Exception as e:
-                    emit_log(f"[{p_num:02d}/{total_pages}] 第 {attempt}/{max_attempts} 次嘗試失敗: {e}")
+                    emit_log(f"{tag} 第 {attempt}/{max_attempts} 次嘗試失敗: {e}")
                     for leftover in (temp_filepath, filepath):
                         if leftover and os.path.exists(leftover):
                             try: os.remove(leftover)
                             except OSError: pass
-                    time.sleep(attempt * 2)
+                    if attempt < max_attempts:
+                        # the CDN answers bursts with 503 / dropped connections: back off for real
+                        wait = min(120, 15 * attempt) + random.uniform(0, 10)
+                        emit_log(f"{tag} 等待 {wait:.0f} 秒後重試...")
+                        time.sleep(wait)
+            emit_log(f"{tag} 重試次數耗盡，此集下載失敗: {os.path.basename(base)}")
+            return False
 
-            if not download_ok:
-                emit_log(f"[{p_num:02d}/{total_pages}] 重試次數耗盡，此集下載失敗: {os.path.basename(base)}")
-                failed_episodes.append(p_num)
+        failed_pages = []
+        for idx, page_info in enumerate(needed_pages):
+            if cancelled():
+                emit_log("任務已被使用者手動取消。")
+                break
+            if download_episode(page_info, max_attempts=6):
+                success_count += 1
+            elif not cancelled():
+                failed_pages.append(page_info)
 
             if progress_callback:
                 percent = (success_count / total_pages) * 100.0
                 progress_callback(success_count, total_pages, percent, f"進度 {success_count}/{total_pages}")
 
             # Jitter delay
-            if idx < len(needed_pages) - 1 and not (check_cancelled and check_cancelled()):
+            if idx < len(needed_pages) - 1 and not cancelled():
                 delay = random.uniform(min_delay, max_delay)
                 emit_log(f"緩衝休眠 {delay:.1f} 秒...")
                 time.sleep(delay)
+
+        # Second pass: CDN trouble usually clears after a few minutes
+        if failed_pages and not cancelled():
+            cooldown = 300
+            emit_log(f"有 {len(failed_pages)} 集失敗，{cooldown // 60} 分鐘後自動重抓這些集數...")
+            for _ in range(cooldown):
+                if cancelled():
+                    break
+                time.sleep(1)
+            still_failed = []
+            for page_info in failed_pages:
+                if cancelled():
+                    still_failed.append(page_info)
+                    continue
+                if download_episode(page_info, max_attempts=4):
+                    success_count += 1
+                    if progress_callback:
+                        progress_callback(success_count, total_pages, success_count / total_pages * 100.0,
+                                          f"進度 {success_count}/{total_pages}")
+                else:
+                    still_failed.append(page_info)
+                if not cancelled():
+                    time.sleep(random.uniform(min_delay, max_delay))
+            failed_pages = still_failed
+        failed_episodes = [p['page'] for p in failed_pages]
 
         emit_log(f"\n================ 任務總結 ================")
         emit_log(f"總集數: {total_pages}")
@@ -505,9 +537,12 @@ class BiliDownloadEngine:
 MIN_BITRATE = 16000
 DURATION_TOLERANCE = 0.01    # 1 % of the expected length ...
 DURATION_TOLERANCE_MIN = 2.0 # ... but never stricter than 2 seconds
-# Some Bilibili sources carry a stray bad SBR frame ("env_facs_q ... is invalid") on every download.
-# Real damage is far noisier: 512 corrupted bytes already produce ~12 decoder errors.
-MAX_DECODE_WARNINGS = 3
+# Some Bilibili sources carry stray bad SBR frames ("env_facs_q ... is invalid") that are identical
+# on every download; long recordings have more of them (6 in a 6.5 h file). Real damage is far noisier
+# and shows other error types too: 512 corrupted bytes already produce ~12 errors.
+MAX_DECODE_WARNINGS = 3                 # any other decoder error
+SOURCE_SBR_WARNINGS_PER_HOUR = 3        # "env_facs_q ... is invalid", with a floor of MAX_DECODE_WARNINGS
+SOURCE_SBR_RE = re.compile(r'env_facs_q \d+ is invalid')
 
 
 def set_shared_perms(path: str) -> None:
@@ -601,8 +636,12 @@ def verify_audio_file(filepath: str, expected_duration: float) -> Tuple[bool, st
     res = subprocess.run(['ffmpeg', '-v', 'error', '-i', filepath, '-map', '0:a:0', '-f', 'null', '-'],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600)
     errors = [l for l in res.stderr.splitlines() if l.strip()]
-    if res.returncode != 0 or len(errors) > MAX_DECODE_WARNINGS:
-        return False, f"Decode errors ({len(errors)}): {(errors[0] if errors else 'ffmpeg exit ' + str(res.returncode))[:150]}"
+    sbr = [l for l in errors if SOURCE_SBR_RE.search(l)]
+    other = [l for l in errors if not SOURCE_SBR_RE.search(l)]
+    sbr_limit = max(MAX_DECODE_WARNINGS, int(duration / 3600 * SOURCE_SBR_WARNINGS_PER_HOUR) + 1)
+    if res.returncode != 0 or len(other) > MAX_DECODE_WARNINGS or len(sbr) > sbr_limit:
+        first = (other or errors or ['ffmpeg exit ' + str(res.returncode)])[0]
+        return False, f"Decode errors ({len(errors)}, 其中來源 SBR 警告 {len(sbr)}/{sbr_limit}): {first[:150]}"
     if errors:
         # a few decoder complaints come from the source itself (identical on every download)
         return True, f"原始音訊有 {len(errors)} 處解碼警告（來源本身如此，不影響播放）: {errors[0].split('] ', 1)[-1][:80]}"
